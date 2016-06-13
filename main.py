@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import subprocess
 from datetime import datetime, timedelta
 
 from Tkinter import *
@@ -76,6 +77,8 @@ class Application(Frame):
             s += timedelta(days=1)
             
         tkMessageBox.showinfo(title=u"成功", message="账单下载结束")
+        subprocess.call('explorer "%s"' % path.replace('/', '\\'), shell=True)
+        
     
     def save_bill(self, text, bill_date, mch_id, sub_mch_id=None):
         bill_date = bill_date.strftime("%Y%m%d")
