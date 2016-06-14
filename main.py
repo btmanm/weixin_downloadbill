@@ -2,6 +2,9 @@
 
 import os
 import subprocess
+import sys
+import time
+import threading
 from datetime import datetime, timedelta
 
 from Tkinter import *
@@ -9,16 +12,16 @@ from Tkinter import *
 import tkFileDialog
 import tkMessageBox
 import tkFont
+import ttk
 
 from weixin_mch_api import download_bill
 
 import config
-import csv
+from ttk import Progressbar
 
 try:
     cur_path = os.path.dirname(os.path.abspath(__file__))
 except NameError:
-    import sys
     cur_path = os.path.dirname(os.path.abspath(sys.argv[0]))
     
 class Application(Frame):
@@ -59,26 +62,42 @@ class Application(Frame):
 
         bill_date_to = self.var_bill_date_to.get().strip()
         if len(bill_date_to) == 0:
-            bill_date_to = datetime.now().strftime("%Y%m%d")
+            bill_date_to = (datetime.now() + timedelta(days=-1)).strftime("%Y%m%d")
         
         s = datetime.strptime(bill_date_from, "%Y%m%d")
         e = datetime.strptime(bill_date_to, "%Y%m%d")
         
-        while s < e:
-            if len(sub_mch_ids) > 0:
-                for sub_mch_id in sub_mch_ids:
-                    r = download_bill(mch_key, appid, mch_id, s, sub_mch_id)
-                    self.save_bill(r, s, mch_id, sub_mch_id)
+        def work_proc(self, path, s, e, sub_mch_ids, event):
             
-            else:
-                r = download_bill(mch_key, appid, mch_id, s)
-                self.save_bill(r, s, mch_id)
+            self.btn_run.config(state='disabled')
+            
+            days = (e - s).days + 1
+            max = days * (len(sub_mch_ids) if len(sub_mch_ids) > 0 else 1)
+            
+            self.prg_bar.config({'maximum': max})
+
+            while s <= e:
+                if len(sub_mch_ids) > 0:
+                    for sub_mch_id in sub_mch_ids:
+                        r = download_bill(mch_key, appid, mch_id, s, sub_mch_id)
+                        self.save_bill(r, s, mch_id, sub_mch_id)
+                        self.prg_bar.step()
                 
-            s += timedelta(days=1)
+                else:
+                    r = download_bill(mch_key, appid, mch_id, s)
+                    self.save_bill(r, s, mch_id)
+                    self.prg_bar.step()
+                    
+                s += timedelta(days=1)
+
+            self.btn_run.config(state='normal')
             
-        tkMessageBox.showinfo(title=u"成功", message="账单下载结束")
-        subprocess.call('explorer "%s"' % path.replace('/', '\\'), shell=True)
+            event.set()
         
+        self.running = True
+        
+        work_thread = threading.Thread(target=work_proc, args=(self, path, s, e, sub_mch_ids, self.event))
+        work_thread.start()
     
     def save_bill(self, text, bill_date, mch_id, sub_mch_id=None):
         bill_date = bill_date.strftime("%Y%m%d")
@@ -174,10 +193,30 @@ class Application(Frame):
         
         row += 1
         
+        # 进度条
+        self.prg_bar = Progressbar(self)
+        self.prg_bar.grid(column=0, row=row, columnspan=3, sticky=(W, E), pady=(10, 0))
+        
+        row += 1
+        
         # 执行按钮
-        self.btn_run = Button(self, width=20, text=u"下载", fg='blue', command=self.run)
-        self.btn_run.grid(column=1, row=row, pady=(15, 0))
+        buttonFrame = Frame(self)
+        buttonFrame.grid(column=0, row=row, columnspan=3, pady=(15, 0), sticky=(W, E))
+        
+        self.btn_run = Button(buttonFrame, width=20, text=u"下载", fg='blue', command=self.run)
+        self.btn_run.pack()
 
+    def loop(self):
+        if self.running and self.event.is_set():
+            self.running = False
+            self.event.clear()
+            
+            tkMessageBox.showinfo(title=u"成功", message="账单下载结束")
+            subprocess.call('explorer "%s"' % self.var_path.get().strip().replace('/', '\\'), shell=True)
+            
+        self.master.after(100, self.loop)
+
+                
     def __init__(self, master=None):
         Frame.__init__(self, master)
         
@@ -191,11 +230,17 @@ class Application(Frame):
 
         settings = config.load()
         self.createWidgets(settings)
+        
+        self.event = threading.Event()
+
+        self.running = False
+        self.loop()
+
 
 root = Tk()
 root.title(u"微信商户平台对账单下载")
 root.rowconfigure(0, weight=1)
-root.columnconfigure (0, weight=1)
+root.columnconfigure(0, weight=1)
 
 root.resizable(width=False, height=False)
 app = Application(master=root)
