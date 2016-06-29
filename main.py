@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import time
+import logging
 import threading
 from datetime import datetime, timedelta
 
@@ -18,6 +19,8 @@ from weixin_mch_api import download_bill
 
 import config
 from ttk import Progressbar
+
+logging.basicConfig(level=logging.DEBUG)
 
 try:
     cur_path = os.path.dirname(os.path.abspath(__file__))
